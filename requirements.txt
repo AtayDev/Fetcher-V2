@@ -12,3 +12,7 @@ langchain-community==0.3.2
 langchain-openai==0.2.2
 langchain-google-genai==2.0.3
 google-generativeai==0.7.2
+
+PyQt6==6.6.1
+PyQt6-WebEngine==6.6.0
+pyinstaller==6.3.0
