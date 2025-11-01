@@ -1,0 +1,1761 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Nordlys Fetcher</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+
+    <style>
+        /* --- Swiss Data Console Palette --- */
+        :root {
+            --color-bg: #FAF9F7; 
+            --color-panel: #FFFFFF; 
+            --color-text: #111111;
+            --color-accent-hover: #F0F0F0;
+            --color-text-muted: #888888;
+            --color-border: #EAEAEA;
+            --color-primary-button: #000000;
+            --color-primary-button-hover: #333333;
+            --color-active-pill: #afa380be;
+            --color-active-selection: #F5F3F0;
+            --color-active-selection-border: #E5E0D4;
+            
+            /* NEW: Modern chat colors */
+            --color-user-bubble: #000000;
+            --color-ai-bubble: #F5F3F0;
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--color-bg); 
+            color: var(--color-text);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .app-shell {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px; 
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: transparent;
+        }
+
+        /* --- UPDATED: Modern Chat Bubbles --- */
+        /* Replace existing .message-container block */
+        /* --- Fix message bubble sizing and alignment --- */
+        /* --- Refine bubble sizing and inner spacing --- */
+        .message-container {
+            border-radius: 18px;
+            margin-bottom: 1.5rem;
+            max-width: 90%;
+            width: 100%;
+            font-weight: 400;
+            border: none;
+            box-shadow: none;
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+            line-height: 1.5;
+            min-height: 80px;
+            padding: 1.25rem 1.75rem; /* normal for all */
+        }
+
+        /* --- AI "thinking" state override --- */
+        .ai-message.thinking {
+            position: relative;
+            padding: 1.25rem 1.75rem 1.25rem 1.75rem; /* keep even spacing */
+        }
+
+        /* Force inner text to align flush left (cancel header gap) */
+        .ai-message.thinking .chat-content {
+            display: block;
+            text-align: left !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            color: var(--color-text-muted);
+        }
+
+        /* --- Pulse animation for search feedback --- */
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.01); }
+        }
+
+        /* --- Headers restored and aligned --- */
+        .message-header {
+            display: flex !important;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            gap: 0.5rem;
+        }
+        .user-message .message-header {
+            justify-content: flex-end;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .ai-message .message-header {
+            justify-content: flex-start;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+
+
+
+        .message-new { 
+            opacity: 0; 
+            transform: translateY(20px); 
+        }
+        
+        /* User messages: right-aligned, dark bubble */
+        .user-message {
+            background-color: var(--color-user-bubble);
+            color: var(--color-panel);
+            margin-left: auto;
+            margin-right: 0;
+            border-bottom-right-radius: 4px;
+        }
+        
+        /* AI messages: left-aligned, light bubble */
+        .ai-message {
+            background-color: var(--color-ai-bubble);
+            color: var(--color-text);
+            margin-right: auto;
+            margin-left: 0;
+            border-bottom-left-radius: 4px;
+        }
+        
+        /* UPDATED: Message header styling - full width title bar */
+        .message-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.875rem;
+            padding-bottom: 0.625rem;
+            gap: 0.75rem;
+        }
+        .user-message .message-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .ai-message .message-header {
+            border-bottom: 1px solid var(--color-border);
+        }
+        .message-header-icon {
+            width: 1.375rem;
+            height: 1.375rem;
+            flex-shrink: 0;
+        }
+        .user-message .message-header-icon {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .ai-message .message-header-icon {
+            color: var(--color-text);
+        }
+        .message-header-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .user-message .message-header-label {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .ai-message .message-header-label {
+            color: var(--color-text);
+        }
+        
+        /* NEW: Pulsing animation for thinking state */
+        @keyframes pulse-fade {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .pulse-thinking {
+            animation: pulse-fade 1.5s ease-in-out infinite;
+        }
+        
+        /* NEW: Spinning animation for loading state */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .spin-loading {
+            animation: spin 1s linear infinite;
+        }
+        
+        /* Remove header styling for cleaner look */
+        .message-header {
+            display: none; /* Hide avatars and labels for minimal look */
+        }
+        
+        .chat-content {
+            font-family: 'Inter', sans-serif;
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: inherit;
+        }
+        
+        /* Markdown styling adjustments */
+        .chat-content strong { font-weight: 600; }
+        .chat-content em { font-style: italic; }
+        .chat-content h1 { 
+            font-size: 1.5rem; 
+            font-weight: 700; 
+            margin: 1.25rem 0 0.75rem 0; 
+            padding-bottom: 0.5rem;
+        }
+        .chat-content h2 { 
+            font-size: 1.25rem; 
+            font-weight: 600; 
+            margin: 1rem 0 0.5rem 0; 
+        }
+        .chat-content h3 { 
+            font-size: 1.1rem; 
+            font-weight: 600; 
+            margin: 0.875rem 0 0.5rem 0; 
+        }
+        .chat-content ul { 
+            list-style-type: none;
+            margin-left: 0;
+            margin-top: 0.5rem;
+            padding-left: 0;
+        }
+        .chat-content ul li {
+            position: relative;
+            padding-left: 1.5rem;
+            margin-bottom: 0.375rem;
+        }
+        .chat-content ul li:before {
+            content: "•";
+            position: absolute;
+            left: 0.5rem;
+            color: var(--color-text-muted);
+        }
+        .user-message .chat-content ul li:before {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .chat-content ol { 
+            list-style-type: decimal; 
+            margin-left: 1.5rem; 
+            margin-top: 0.5rem; 
+        }
+        .chat-content li { 
+            margin-bottom: 0.375rem; 
+        }
+        
+        /* Welcome Message */
+        #chat-welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            flex-grow: 1;
+            padding: 2rem;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        #chat-welcome.show { opacity: 1; }
+        #chat-welcome-icon { width: 4rem; height: 4rem; color: #D1D5DB; margin-bottom: 1.5rem; }
+        #chat-welcome h1 { font-size: 2.5rem; font-weight: 800; color: var(--color-text); margin-bottom: 1rem; }
+        #chat-welcome p { font-size: 1.125rem; color: var(--color-text-muted); max-width: 650px; line-height: 1.6; }
+        
+        #chat-history-container {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        /* AI Sources - Updated for bubble style */
+        .ai-source {
+            border-top: 1px solid var(--color-border);
+            padding-top: 0.75rem;
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .ai-source-button { 
+            display: flex; 
+            align-items: center; 
+            text-align: left; 
+            padding: 0.5rem 0.75rem; 
+            border-radius: 8px; 
+            transition: background-color 0.2s; 
+            width: 100%; 
+        }
+        .ai-source-button:hover { 
+            background-color: rgba(0, 0, 0, 0.05); 
+        }
+        .ai-source-button:disabled { 
+            opacity: 0.6; 
+            cursor: not-allowed; 
+            background-color: transparent; 
+        }
+        .ai-source-button-icon { 
+            width: 1rem; 
+            height: 1rem; 
+            margin-right: 0.75rem; 
+            color: var(--color-text-muted); 
+            flex-shrink: 0; 
+        }
+        .ai-source-button-text { 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+            font-size: 0.9rem; 
+            font-weight: 500; 
+            color: var(--color-text); 
+        }
+
+        /* Chat Input Area */
+        .chat-input-area {
+            position: sticky;
+            bottom: 0;
+            z-index: 10;
+            padding: 1rem 0 1.5rem 0; 
+            background: linear-gradient(to top, var(--color-bg) 80%, rgba(250, 249, 247, 0.0) 100%);
+            border-top: 1px solid var(--color-border);
+        }
+        
+        #chat-input-box {
+            position: relative;
+            width: 100%;
+            background-color: var(--color-panel);
+            border: 2px solid var(--color-border); 
+            border-radius: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+        #chat-input-box:focus-within {
+            border-color: var(--color-active-pill);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        #q {
+            width: 100%;
+            padding: 1.25rem 1.5rem 0.5rem 1.5rem; 
+            background-color: transparent;
+            border: none;
+            resize: none;
+            color: var(--color-text);
+            min-height: 60px;
+            max-height: 200px;
+            border-radius: 1.5rem 1.5rem 0 0;
+            order: 1;
+        }
+        #q:focus {
+            outline: none;
+            box-shadow: none;
+        }
+        
+        #chat-input-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem 0.75rem 1rem;
+            order: 2;
+        }
+        
+        #source-select-trigger {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            background-color: var(--color-panel);
+            border: 1px solid var(--color-border);
+            border-radius: 9999px;
+            color: var(--color-text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #source-select-trigger:hover {
+            background-color: var(--color-accent-hover);
+            border-color: #D1D5DB;
+        }
+        #source-select-trigger i {
+            width: 1.25rem;
+            height: 1.25rem;
+            color: var(--color-text-muted);
+        }
+        
+        #source-select-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background-color: var(--color-active-pill);
+            color: var(--color-panel);
+            font-size: 0.7rem;
+            font-weight: 600;
+            line-height: 1;
+            padding: 0.25rem 0.4rem;
+            border-radius: 9999px;
+            border: 2px solid var(--color-panel);
+            display: none;
+        }
+        #source-select-badge.show {
+            display: block;
+        }
+        
+        #chat-submit-button {
+            background-color: var(--color-text);
+            color: var(--color-panel);
+            border-radius: 9999px; 
+            width: 2.5rem; 
+            height: 2.5rem; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            border: none;
+        }
+        #chat-submit-button:hover:not(:disabled) {
+            background-color: var(--color-primary-button-hover);
+            transform: scale(1.05);
+        }
+        #chat-submit-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background-color: var(--color-text-muted);
+        }
+        #chat-submit-button i {
+            width: 1.25rem; 
+            height: 1.25rem; 
+        }
+        
+        /* --- UPDATED: Source Selector Modal --- */
+        #source-select-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.05);
+            backdrop-filter: none;
+            z-index: 19;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        #source-select-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #source-select-popup {
+            position: fixed;
+            width: 100%;
+            max-width: 32rem;
+            background-color: var(--color-panel);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            max-height: 400px;
+            
+            opacity: 0;
+            transform-origin: bottom left;
+            transform: scale(0.95) translateY(10px);
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+            pointer-events: none;
+        }
+        
+        #source-select-popup.show {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: auto;
+        }
+
+        #source-select-header {
+            padding: 1rem 1rem 0.75rem 1.25rem;
+            border-bottom: 1px solid var(--color-border);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        #source-select-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        
+        #source-search-toggle {
+            padding: 0.375rem;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            color: var(--color-text-muted);
+        }
+        #source-search-toggle:hover {
+            background-color: var(--color-accent-hover);
+            color: var(--color-text);
+        }
+        #source-search-toggle i {
+            width: 1.125rem;
+            height: 1.125rem;
+        }
+        
+        /* UPDATED: Search container with close button */
+        #source-search-container {
+            padding: 0.75rem 1.25rem;
+            border-bottom: 1px solid var(--color-border);
+            flex-shrink: 0;
+            display: none;
+            position: relative;
+        }
+        
+        #source-search-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        #source-search {
+            width: 100%;
+            padding: 0.5rem 2.5rem 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--color-border);
+            background-color: var(--color-bg);
+            font-size: 0.875rem;
+        }
+        #source-search:focus {
+            outline: none;
+            border-color: var(--color-active-pill);
+            background-color: var(--color-panel);
+        }
+        
+        #source-search-close {
+            position: absolute;
+            right: 0.5rem;
+            padding: 0.25rem;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+            color: var(--color-text-muted);
+            cursor: pointer;
+        }
+        #source-search-close:hover {
+            background-color: var(--color-accent-hover);
+            color: var(--color-text);
+        }
+        #source-search-close i {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        #source-select-list {
+            overflow-y: auto;
+            flex-grow: 1;
+            padding: 0.5rem;
+        }
+
+        .source-list-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border: 2px solid transparent; 
+        }
+        .source-list-item:not(.selected):hover {
+            background-color: var(--color-bg);
+        }
+        .source-list-item.selected {
+            background-color: var(--color-active-selection);
+            border-color: var(--color-active-selection-border);
+            font-weight: 500;
+        }
+        .source-list-item .source-item-file-icon {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.75rem;
+            color: var(--color-text-muted);
+            flex-shrink: 0;
+        }
+        .source-list-item.selected .source-item-file-icon {
+            color: var(--color-primary-button);
+        }
+        .source-item-check-icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            margin-right: 0.75rem;
+            flex-shrink: 0;
+            color: var(--color-text-muted);
+        }
+        .source-list-item.selected .source-item-check-icon {
+            color: var(--color-text);
+        }
+        
+        .source-list-item .source-item-filename {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 0.9rem;
+        }
+        
+        #source-select-footer {
+            padding: 0.75rem 1.25rem;
+            border-top: 1px solid var(--color-border);
+            flex-shrink: 0;
+            text-align: right;
+        }
+        #source-select-done {
+            background-color: var(--color-primary-button);
+            color: var(--color-panel);
+            font-size: 0.875rem;
+            font-weight: 500;
+            padding: 0.5rem 1.25rem;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+        #source-select-done:hover {
+            background-color: var(--color-primary-button-hover);
+        }
+
+        /* Dashboard Styling */
+        .dashboard-panel {
+            background-color: var(--color-panel);
+            border: 1px solid var(--color-border);
+            border-radius: 6px; 
+            box-shadow: none; 
+        }
+        .dashboard-heading {
+            font-size: 1.125rem; 
+            font-weight: 600; 
+            color: var(--color-text);
+            border-bottom: 1px solid var(--color-border);
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .upload-zone {
+            background-color: var(--color-panel);
+            border: 2px dashed var(--color-border);
+            padding: 3rem 2rem;
+            border-radius: 6px; 
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .upload-zone:hover {
+            border-color: var(--color-text);
+            background-color: var(--color-accent-hover); 
+        }
+        .custom-file-input-trigger {
+            background: var(--color-panel);
+            color: var(--color-text);
+            border: 1px solid var(--color-text);
+            border-radius: 4px; 
+            padding: 0.75rem 1.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .custom-file-input-trigger:hover {
+            background: var(--color-text);
+            color: var(--color-panel);
+        }
+        .index-button {
+            background: var(--color-primary-button);
+            color: var(--color-panel);
+            border-radius: 4px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            border: 1px solid var(--color-primary-button);
+        }
+        .index-button:hover:not(:disabled) {
+            background: var(--color-primary-button-hover);
+            border-color: var(--color-primary-button-hover);
+        }
+        .index-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .file-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text);
+            font-size: 0.95rem;
+            transition: background-color 0.2s;
+        }
+        .file-list-item:hover {
+            background-color: var(--color-accent-hover);
+        }
+        .file-list-item:last-child {
+            border-bottom: none;
+        }
+        .file-delete-button {
+            color: #EF4444; 
+            padding: 0.25rem; 
+            border-radius: 9999px; 
+            transition: all 0.2s;
+        }
+        .file-delete-button:hover {
+            color: #B91C1C; 
+            background-color: #FEE2E2; 
+        }
+
+        /* Central Toast Notification */
+        #modal-toast-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.05);
+            backdrop-filter: blur(2px);
+            z-index: 998;
+            opacity: 0;
+            transition: opacity 0.3s ease-out;
+            pointer-events: none;
+        }
+        #modal-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            padding: 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.5rem;
+            z-index: 999;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: none; 
+            border: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #modal-toast.show {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+            pointer-events: all;
+        }
+        #modal-toast-overlay.show {
+            opacity: 1;
+        }
+        #modal-toast.success {
+            background-color: var(--color-panel);
+            color: var(--color-text);
+        }
+        #modal-toast.error {
+            background-color: #D90429;
+            border-color: #D90429;
+            color: #FFFFFF;
+        }
+
+        /* PDF Viewer Modal */
+        #pdf-viewer-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(2px);
+            z-index: 40;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        #pdf-viewer-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #pdf-viewer-modal {
+            position: fixed;
+            top: 50%; left: 50%;
+            width: 90vw; height: 90vh;
+            max-width: 60rem; 
+            background-color: var(--color-panel);
+            z-index: 50;
+            border-radius: 6px; 
+            border: 1px solid var(--color-border);
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.95);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            pointer-events: none;
+        }
+        #pdf-viewer-modal.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+        #pdf-render-area {
+            flex: 1 1 auto;
+            overflow: auto;
+            padding: 1rem;
+            background-color: var(--color-bg);
+        }
+        #pdf-render-area canvas {
+            border: 1px solid var(--color-border);
+            display: block;
+            margin: 0 auto;
+        }
+        #pdf-nav-button {
+             padding: 0.375rem; 
+             border-radius: 4px; 
+             transition: background-color 0.2s;
+        }
+        #pdf-nav-button:hover:not(:disabled) {
+            background-color: var(--color-accent-hover);
+        }
+        #pdf-nav-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Nav */
+        .nav-link.active {
+            color: var(--color-text);
+            font-weight: 600;
+            border-right: 3px solid var(--color-text);
+        }
+        .nav-link {
+            color: var(--color-text-muted);
+            font-weight: 500;
+            border-right: 3px solid transparent;
+        }
+        .nav-link:hover {
+            color: var(--color-text);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-shell { flex-direction: column; }
+            #sidebar {
+                width: 100%; height: auto; max-height: 50vh;
+                border-bottom: 1px solid var(--color-border); border-right: none;
+            }
+            #modal-toast { width: 90%; }
+            #pdf-viewer-modal { width: 95vw; height: 95vh; }
+            .chat-input-area { padding: 1rem 0 1rem 0; } 
+            #q { padding: 1.25rem 1rem 0.5rem 1rem; min-height: 60px; } 
+            #chat-input-actions { padding: 0.5rem 0.5rem 0.5rem 0.75rem; }
+            #chat-submit-button { right: 0.5rem; width: 2.25rem; height: 2.25rem; }
+            #chat-submit-button i { width: 1.125rem; height: 1.125rem; }
+            .message-container { 
+                width: 95%;
+                padding: 1rem 1.25rem;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="modal-toast-overlay"></div>
+    <div id="modal-toast">
+        <i id="toast-icon" data-lucide="check-circle" class="w-8 h-8 mr-4"></i>
+        <span id="toast-message"></span>
+    </div>
+
+    <div id="pdf-viewer-overlay" onclick="hidePdfViewer()"></div>
+    <div id="pdf-viewer-modal">
+        <div class="flex items-center justify-between p-3 border-b border-[--color-border] flex-shrink-0">
+            <div class="flex items-center space-x-4">
+                <span class="font-bold text-[--color-text] truncate text-sm" id="pdf-filename" title="Loading...">Loading...</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button id="pdf-prev" title="Previous Page" class="p-1.5 rounded hover:bg-[--color-accent-hover] transition-colors disabled:opacity-40" disabled>
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </button>
+                <span class="text-sm text-[--color-text-muted]">
+                    Page 
+                    <input type="number" id="pdf-page-num" class="w-14 text-center bg-[--color-bg] border border-[--color-border] rounded text-sm p-1"> 
+                    of <span id="pdf-page-count">0</span>
+                </span>
+                <button id="pdf-next" title="Next Page" class="p-1.5 rounded hover:bg-[--color-accent-hover] transition-colors disabled:opacity-40" disabled>
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <button onclick="hidePdfViewer()" title="Close" class="p-1.5 rounded hover:bg-[--color-accent-hover] transition-colors ml-4">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div id="pdf-render-area" class="custom-scrollbar">
+            <canvas id="pdf-canvas"></canvas>
+            <div id="pdf-loader" class="text-center p-10 text-[--color-text-muted]">
+                <i data-lucide="loader-2" class="w-8 h-8 mx-auto animate-spin"></i>
+                <p class="mt-2 text-sm">Loading document...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Source Selector Modal -->
+    <div id="source-select-overlay"></div>
+    <div id="source-select-popup">
+        <div id="source-select-header">
+            <h2 id="source-select-title">Active Sources</h2>
+            <button id="source-search-toggle" title="Search Sources">
+                <i data-lucide="search"></i>
+            </button>
+        </div>
+        <!-- UPDATED: Search Input Container with Close Button -->
+        <div id="source-search-container">
+            <div id="source-search-wrapper">
+                <input type="text" id="source-search" placeholder="Search sources...">
+                <button id="source-search-close" title="Close Search">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+        </div>
+        <div id="source-select-list" class="custom-scrollbar">
+            <!-- Source items will be populated by JS -->
+        </div>
+        <div id="source-select-footer">
+            <button id="source-select-done">Done</button>
+        </div>
+    </div>
+
+
+    <div class="app-shell">
+        
+        <div id="sidebar" class="w-72 bg-[--color-bg] flex flex-col p-6 custom-scrollbar overflow-y-auto border-r border-[--color-border]">
+            <div class="flex items-center text-xl font-bold mb-10 text-[--color-text] border-b border-[--color-border] pb-4">
+                <i data-lucide="scan" class="w-6 h-6 mr-3 text-[--color-text]"></i>
+                Nordlys Fetcher
+            </div>
+
+            <nav class="space-y-3 mb-10">
+                <a href="#" id="nav-chat" onclick="showView('chat')" class="nav-link flex items-center p-2 rounded-lg transition-colors">
+                    <i data-lucide="message-square" class="w-5 h-5 mr-3"></i>
+                    Chat Console
+                </a>
+                <a href="#" id="nav-dashboard" onclick="showView('dashboard')" class="nav-link flex items-center p-2 rounded-lg transition-colors">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5 mr-3"></i>
+                    Dashboard
+                </a>
+            </nav>
+
+            <div class="flex-grow"></div>
+            
+            <div class="text-xs text-[--color-text-muted] text-center border-t border-[--color-border] pt-4">
+                v0.1 by Nordlys Tech, AI for the Industry
+            </div>
+        </div>
+
+        <main class="flex-1 flex flex-col min-w-0">
+
+            <div id="view-chat" class="h-full flex flex-col" style="display: none;">
+                
+                <div id="chat-history-container" class="custom-scrollbar">
+                    
+                    <div id="messages" class="space-y-4 max-w-4xl mx-auto px-8 pt-8">
+                        <!-- Messages are appended here by JS -->
+                    </div>
+
+                    <div id="chat-welcome">
+                        <i data-lucide="rocket" id="chat-welcome-icon"></i>
+                        <h1>Nordlys Fetcher</h1>
+                        <p>
+                            Your domain-specific query engine. Ask me anything about your indexed documents.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="max-w-4xl mx-auto px-8">
+                        <div id="chat-input-box">
+                            <textarea 
+                                id="q" 
+                                class="custom-scrollbar"
+                                placeholder="Type your query here. Use Shift+Enter for a new line..."
+                                rows="1"
+                                oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                            ></textarea>
+                            
+                            <div id="chat-input-actions">
+                                <button id="source-select-trigger" title="Select Sources">
+                                    <i data-lucide="database"></i>
+                                    <span id="source-select-badge"></span>
+                                </button>
+                                
+                                <button id="chat-submit-button" onclick="ask()" disabled>
+                                    <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-dashboard" class="flex-1 px-12 pt-10 custom-scrollbar overflow-y-auto" style="display: none;">
+                <h1 class="text-3xl font-bold mb-10 text-[--color-text]">Dashboard: Index Knowledge Sources</h1>
+                
+                <div class="max-w-5xl mx-auto space-y-12">
+                    
+                    <div class="dashboard-panel p-6">
+                        <h2 class="dashboard-heading">Add New Knowledge Source</h2>
+                        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+                            <input type="hidden" name="client" value="{{ client }}"> 
+                            
+                            <label for="file-upload" class="upload-zone block">
+                                <i data-lucide="file-up" class="w-12 h-12 mx-auto mb-4 text-[--color-text-muted]"></i>
+                                <p class="text-xl font-medium text-[--color-text] mb-2" id="drop-zone-text">
+                                    Drag & Drop files here or Click to Browse
+                                </p>
+                                <p class="text-sm text-[--color-text-muted] mb-6">
+                                    Supported formats: PDF, TXT, DOCX.
+                                </p>
+                                
+                                <input id="file-upload" type="file" name="file" required class="hidden">
+                                
+                                <span class="custom-file-input-trigger">
+                                    <i data-lucide="folder-open" class="w-5 h-5 mr-2"></i>
+                                    Browse Files
+                                </span>
+                            </label>
+                            
+                            <div class="mt-6 flex justify-between items-center">
+                                <p id="upload-status" class="text-sm text-[--color-text-muted]"></p>
+                                <button type="submit" id="index-button" class="index-button disabled:opacity-50" disabled>
+                                    <i data-lucide="upload-cloud" class="w-5 h-5 inline mr-2"></i> 
+                                    Index Document
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="dashboard-panel p-6">
+                        <h2 class="dashboard-heading">Indexing Status</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
+                            <div class="flex flex-col border border-[--color-border] p-4 rounded-md">
+                                <span class="text-[--color-text-muted] mb-1">Total Indexed Documents</span>
+                                <strong class="text-2xl font-bold text-[--color-text]" id="stats-doc-count">0</strong>
+                            </div>
+                            <div class="flex flex-col border border-[--color-border] p-4 rounded-md">
+                                <span class="text-[--color-text-muted] mb-1">Total Knowledge Volume</span>
+                                <strong class="text-2xl font-bold text-[--color-text]" id="stats-total-size">0 B</strong>
+                            </div>
+                            <div class="flex flex-col border border-[--color-border] p-4 rounded-md">
+                                <span class="text-[--color-text-muted] mb-1">Last Indexing Activity</span>
+                                <strong class="text-2xl font-bold text-[--color-text]" id="stats-last-indexed">N/A</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-panel p-6 mb-10">
+                        <h2 class="dashboard-heading">Current Document Index</h2>
+                        <div id="file-list">
+                            <p id="no-files-message" class="text-[--color-text-muted] text-center text-sm p-4 italic"
+                                {% if files %}style="display: none;"{% endif %}>
+                                No documents indexed yet. Upload above!
+                            </p>
+                            
+                            {% for f in files %}
+                                <div class="file-list-item">
+                                    <div class="flex items-center min-w-0">
+                                        <i data-lucide="file-text" class="w-4 h-4 mr-3 text-[--color-text-muted] flex-shrink-0"></i>
+                                        <span class="truncate font-medium" title="{{ f }}">{{ f }}</span>
+                                    </div>
+                                    <button class="file-delete-button" title="Delete {{ f }}"
+                                        onclick="deleteFile('{{ f }}', this.closest('.file-list-item'))">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // --- Global Elements ---
+        const toastOverlay = document.getElementById('modal-toast-overlay');
+        const toast = document.getElementById('modal-toast');
+        const toastMessage = document.getElementById('toast-message');
+        const toastIcon = document.getElementById('toast-icon');
+        let toastTimeout;
+        let allFilesCache = [];
+
+        // --- Chat Elements ---
+        const viewChat = document.getElementById('view-chat');
+        const qInput = document.getElementById('q');
+        const chatSubmitButton = document.getElementById('chat-submit-button');
+        const messagesContainer = document.getElementById('messages');
+        const chatHistoryContainer = document.getElementById('chat-history-container');
+        const chatWelcome = document.getElementById('chat-welcome');
+        
+        // --- Source Selector Elements ---
+        const sourceSelectTrigger = document.getElementById('source-select-trigger');
+        const sourceSelectBadge = document.getElementById('source-select-badge');
+        const sourceSelectOverlay = document.getElementById('source-select-overlay');
+        const sourceSelectPopup = document.getElementById('source-select-popup');
+        const sourceSelectDone = document.getElementById('source-select-done');
+        const sourceSelectList = document.getElementById('source-select-list');
+        const sourceSelectTitle = document.getElementById('source-select-title');
+        const sourceSearchContainer = document.getElementById('source-search-container');
+        const sourceSearch = document.getElementById('source-search');
+        const sourceSearchToggle = document.getElementById('source-search-toggle');
+        const sourceSearchClose = document.getElementById('source-search-close');
+
+        // --- Dashboard Elements ---
+        const viewDashboard = document.getElementById('view-dashboard');
+        const uploadForm = document.getElementById('upload-form');
+        const uploadStatus = document.getElementById('upload-status');
+        const fileInput = document.getElementById('file-upload');
+        const indexButton = document.getElementById('index-button');
+        const dropZoneText = document.getElementById('drop-zone-text');
+        const fileList = document.getElementById('file-list');
+        const noFilesMessage = document.getElementById('no-files-message');
+        const navChat = document.getElementById('nav-chat');
+        const navDashboard = document.getElementById('nav-dashboard');
+        
+        // --- Stats Elements ---
+        const statsDocCount = document.getElementById('stats-doc-count');
+        const statsTotalSize = document.getElementById('stats-total-size');
+        const statsLastIndexed = document.getElementById('stats-last-indexed');
+
+        // --- PDF Viewer Elements ---
+        const pdfViewerOverlay = document.getElementById('pdf-viewer-overlay');
+        const pdfViewerModal = document.getElementById('pdf-viewer-modal');
+        const pdfFilename = document.getElementById('pdf-filename');
+        const pdfPageCount = document.getElementById('pdf-page-count');
+        
+        let pdfDoc = null;
+        let currentPageNum = 1;
+        
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // --- State Management ---
+        let currentView = 'chat'; 
+
+        // --- UPDATED: Source Selector Logic ---
+        function toggleSourcePopup() {
+            const isShown = sourceSelectPopup.classList.contains('show');
+            
+            if (isShown) {
+                sourceSelectPopup.classList.remove('show');
+                sourceSelectOverlay.classList.remove('show');
+            } else {
+                const rect = sourceSelectTrigger.getBoundingClientRect();
+                sourceSelectPopup.style.left = `${rect.left}px`;
+                sourceSelectPopup.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+                
+                sourceSelectPopup.classList.add('show');
+                sourceSelectOverlay.classList.add('show');
+                
+                sourceSearch.value = '';
+                filterSourceList('');
+                closeSearchBar();
+            }
+        }
+        
+        // UPDATED: Show search bar
+        sourceSearchToggle.addEventListener('click', () => {
+            sourceSearchContainer.style.display = 'block';
+            sourceSearch.focus();
+        });
+        
+        // NEW: Close search bar
+        function closeSearchBar() {
+            sourceSearchContainer.style.display = 'none';
+            sourceSearch.value = '';
+            filterSourceList('');
+        }
+        
+        sourceSearchClose.addEventListener('click', closeSearchBar);
+
+        function updateSourceSelectionState() {
+            const allItem = document.getElementById('source-select-all');
+            if (!allItem) return;
+
+            const selectedItems = sourceSelectList.querySelectorAll('.source-list-item.selected:not(#source-select-all)');
+            const allItems = sourceSelectList.querySelectorAll('.source-list-item:not(#source-select-all)');
+            
+            let allSelected = false;
+            if (allItems.length > 0 && selectedItems.length === allItems.length) {
+                allSelected = true;
+            }
+
+            allItem.classList.toggle('selected', allSelected);
+            const allItemIcon = allItem.querySelector('.source-item-check-icon');
+            allItemIcon.setAttribute('data-lucide', allSelected ? 'check-circle-2' : 'circle');
+            
+            lucide.createIcons({
+                nodes: [allItemIcon]
+            });
+            
+            if (allSelected) {
+                sourceSelectBadge.textContent = 'All';
+                sourceSelectBadge.classList.add('show');
+            } else if (selectedItems.length === 0) {
+                sourceSelectBadge.textContent = '0';
+                sourceSelectBadge.classList.add('show');
+            } else {
+                sourceSelectBadge.textContent = selectedItems.length;
+                sourceSelectBadge.classList.add('show');
+            }
+        }
+
+        function toggleSourceItem(item) {
+            const isAll = item.id === 'source-select-all';
+            const shouldSelect = !item.classList.contains('selected');
+            
+            item.classList.toggle('selected', shouldSelect);
+            const itemIcon = item.querySelector('.source-item-check-icon');
+            itemIcon.setAttribute('data-lucide', shouldSelect ? 'check-circle-2' : 'circle');
+            lucide.createIcons({ nodes: [itemIcon] });
+
+            if (isAll) {
+                const allItems = sourceSelectList.querySelectorAll('.source-list-item');
+                allItems.forEach(i => {
+                    i.classList.toggle('selected', shouldSelect);
+                    const icon = i.querySelector('.source-item-check-icon');
+                    icon.setAttribute('data-lucide', shouldSelect ? 'check-circle-2' : 'circle');
+                    lucide.createIcons({ nodes: [icon] });
+                });
+            } else {
+                updateSourceSelectionState();
+            }
+        }
+        
+        function filterSourceList(query) {
+            const lowerQuery = query.toLowerCase();
+            const items = sourceSelectList.querySelectorAll('.source-list-item:not(#source-select-all)');
+            items.forEach(item => {
+                const filename = item.dataset.filename.toLowerCase();
+                if (filename.includes(lowerQuery)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+        
+        sourceSearch.addEventListener('input', () => filterSourceList(sourceSearch.value));
+        sourceSelectTrigger.addEventListener('click', toggleSourcePopup);
+        sourceSelectOverlay.addEventListener('click', toggleSourcePopup);
+        sourceSelectDone.addEventListener('click', () => {
+            toggleSourcePopup();
+            updateSourceSelectionState();
+        });
+        
+        async function loadSourceSelector() {
+            try {
+                const res = await fetch('/api/files');
+                if (!res.ok) throw new Error('Failed to fetch files');
+                const data = await res.json();
+                
+                allFilesCache = data.files || [];
+                populateSourceList(allFilesCache);
+                
+            } catch (err) {
+                console.error("Error loading document filters:", err);
+                sourceSelectList.innerHTML = '<span class="text-sm text-red-500 p-4">Error loading documents.</span>';
+            }
+        }
+        
+        function populateSourceList(files) {
+            sourceSelectList.innerHTML = '';
+            
+            if (files.length > 0) {
+                const allItem = document.createElement('div');
+                allItem.className = 'source-list-item selected font-medium';
+                allItem.id = 'source-select-all';
+                allItem.innerHTML = `
+                    <i data-lucide="check-circle-2" class="source-item-check-icon"></i>
+                    <i data-lucide="library" class="source-item-file-icon"></i>
+                    <span class="source-item-filename">Select All Sources</span>
+                `;
+                allItem.addEventListener('click', () => toggleSourceItem(allItem));
+                sourceSelectList.appendChild(allItem);
+
+                files.forEach(filename => {
+                    const item = document.createElement('div');
+                    item.className = 'source-list-item selected';
+                    item.dataset.filename = filename;
+                    item.title = filename;
+                    
+                    const iconName = filename.toLowerCase().endsWith('.pdf') ? 'file-text' : 'file-code';
+                    
+                    item.innerHTML = `
+                        <i data-lucide="check-circle-2" class="source-item-check-icon"></i>
+                        <i data-lucide="${iconName}" class="source-item-file-icon"></i>
+                        <span class="source-item-filename">${filename}</span>
+                    `;
+                    
+                    item.addEventListener('click', () => toggleSourceItem(item));
+                    sourceSelectList.appendChild(item);
+                });
+                lucide.createIcons();
+            } else {
+                sourceSelectList.innerHTML = '<span class="text-sm text-[--color-text-muted] italic p-4 text-center block">No documents indexed.</span>';
+            }
+            updateSourceSelectionState();
+        }
+
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/stats');
+                if (!res.ok) throw new Error('Failed to fetch stats');
+                const data = await res.json();
+                
+                statsDocCount.textContent = data.doc_count;
+                statsTotalSize.textContent = data.total_size;
+                statsLastIndexed.textContent = data.last_indexed;
+            } catch (err) {
+                console.error("Error updating stats:", err);
+            }
+        }
+
+        function showView(view) {
+            currentView = view;
+            viewChat.style.display = 'none';
+            viewDashboard.style.display = 'none';
+
+            navChat.classList.remove('active');
+            navDashboard.classList.remove('active');
+
+            if (view === 'chat') {
+                viewChat.style.display = 'flex';
+                navChat.classList.add('active');
+                loadSourceSelector();
+                updateChatWelcomeVisibility();
+                setTimeout(() => chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight, 10);
+            } else if (view === 'dashboard') {
+                viewDashboard.style.display = 'block';
+                navDashboard.classList.add('active');
+                updateStats(); 
+            }
+        }
+        
+        function showToast(message, isError = false) {
+            clearTimeout(toastTimeout);
+            
+            toastMessage.textContent = message;
+            toast.className = isError ? 'error' : 'success';
+            toastIcon.setAttribute('data-lucide', isError ? 'x-octagon' : 'check-circle');
+            lucide.createIcons();
+
+            toastOverlay.classList.add('show');
+            toast.classList.add('show');
+            
+            toastTimeout = setTimeout(() => {
+                toastOverlay.classList.remove('show');
+                toast.classList.remove('show');
+            }, 2500);
+        }
+
+        function checkEmptyFileList() {
+            const hasFiles = fileList.querySelector('.file-list-item');
+            if (noFilesMessage) {
+                noFilesMessage.style.display = hasFiles ? 'none' : 'block';
+            }
+        }
+        
+        function addFileToList(filename) {
+            checkEmptyFileList();
+            const safeFilename = filename.replace(/'/g, "\\'");
+            const fileHtml = `
+                <div class="file-list-item">
+                    <div class="flex items-center min-w-0">
+                        <i data-lucide="file-text" class="w-4 h-4 mr-3 text-[--color-text-muted] flex-shrink-0"></i>
+                        <span class="truncate font-medium" title="${filename}">${filename}</span>
+                    </div>
+                    <button class="file-delete-button" title="Delete ${filename}"
+                        onclick="deleteFile('${safeFilename}', this.closest('.file-list-item'))">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>`;
+            fileList.insertAdjacentHTML('beforeend', fileHtml);
+            lucide.createIcons();
+            checkEmptyFileList();
+        }
+        
+        async function deleteFile(filename, element) {
+            if (!confirm(`Are you sure you want to delete "${filename}"? This will remove it and its data from the index.`)) {
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename })
+                });
+                
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Failed to delete file.');
+                
+                showToast(`Deleted "${filename}" successfully.`, false);
+                element.remove();
+                updateStats();
+                checkEmptyFileList();
+                loadSourceSelector();
+
+            } catch (err) {
+                console.error("Error deleting file:", err);
+                showToast(err.message, true);
+            }
+        }
+
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                dropZoneText.textContent = `File Selected: ${this.files[0].name}`;
+                uploadStatus.textContent = `Ready to index: ${this.files[0].name}`;
+                indexButton.disabled = false;
+            } else {
+                dropZoneText.textContent = "Drag & Drop files or Click to Browse";
+                uploadStatus.textContent = "";
+                indexButton.disabled = true;
+            }
+        });
+
+        uploadForm.addEventListener('submit', async function(event) {
+            event.preventDefault(); 
+            
+            const formData = new FormData(this);
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            if (fileList.querySelector(`span[title="${file.name}"]`)) {
+                 showToast(`Error: File "${file.name}" already exists.`, true);
+                 return;
+            }
+
+            uploadStatus.textContent = `Indexing ${file.name}... Please wait.`;
+            indexButton.disabled = true;
+
+            try {
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (res.redirected) {
+                    showToast(`Document "${file.name}" indexed successfully!`, false);
+                    addFileToList(file.name); 
+                    updateStats();
+                    loadSourceSelector();
+                } else {
+                     let errorData = await res.text();
+                     try { errorData = JSON.parse(errorData); } catch {}
+
+                     throw new Error(errorData.error || `Upload failed (Status: ${res.status})`);
+                }
+                
+                uploadStatus.textContent = "";
+                fileInput.value = ""; 
+                dropZoneText.textContent = "Drag & Drop files or Click to Browse";
+                indexButton.disabled = true;
+
+            } catch (err) {
+                showToast(err.message || "Document indexing failed.", true);
+                uploadStatus.textContent = "Indexing failed. Try again.";
+                indexButton.disabled = false;
+            }
+        });
+
+        // --- UPDATED: Chat Console Logic ---
+        
+        function updateChatWelcomeVisibility() {
+            if (messagesContainer.children.length > 0) {
+                chatWelcome.classList.remove('show');
+            } else {
+                chatWelcome.classList.add('show');
+            }
+        }
+
+        function simpleMarkdown(text) {
+            let html = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+                
+            html = html.replace(/^(###\s+)(.*$)/gm, '<h3>$2</h3>')
+                       .replace(/^(##\s+)(.*$)/gm, '<h2>$2</h2>')
+                       .replace(/^(#\s+)(.*$)/gm, '<h1>$2</h1>');
+            
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                       .replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+            html = html.replace(/^\s*[\-\*]\s+(.*$)/gm, '<ul><li>$1</li></ul>')
+                       .replace(/<\/ul>\s*<ul>/gm, '')
+                       .replace(/^\s*\d+\.\s+(.*$)/gm, '<ol><li>$1</li></ol>')
+                       .replace(/<\/ol>\s*<ol>/gm, '');
+            
+            html = html.replace(/\n/g, '<br>')
+                       .replace(/<br>(?=<\/?(h[1-3]|ul|ol|li))/gm, '')
+                       .replace(/(<\/(h[1-3]|ul|ol|li)>)<br>/g, '$1');
+            
+            return html;
+        }
+
+        function appendMessage(html) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            const msgElement = tempDiv.firstElementChild;
+            msgElement.classList.add('message-new'); 
+            
+            messagesContainer.appendChild(msgElement);
+            chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
+
+            requestAnimationFrame(() => {
+                msgElement.classList.remove('message-new');
+            });
+            
+            lucide.createIcons();
+            updateChatWelcomeVisibility();
+            return msgElement;
+        }
+
+        async function ask() {
+            const q = qInput.value.trim();
+            if (!q) return;
+            
+            let doc_filter = [];
+            const allSelected = document.getElementById('source-select-all')?.classList.contains('selected');
+            
+            if (!allSelected) {
+                const selectedItems = sourceSelectList.querySelectorAll('.source-list-item.selected:not(#source-select-all)');
+                doc_filter = Array.from(selectedItems).map(item => item.dataset.filename);
+                
+                if (doc_filter.length === 0) {
+                    showToast("Please select at least one source document to query.", true);
+                    return;
+                }
+            }
+
+            const client = 'default';
+
+            // UPDATED: User message with header
+            const userMsgHtml = `
+              <div class="user-message message-container">
+                  <div class="message-header">
+                      <i data-lucide="user" class="message-header-icon"></i>
+                      <span class="message-header-label">You</span>
+                  </div>
+                  <div class="chat-content">${simpleMarkdown(q)}</div>
+              </div>`;
+
+            appendMessage(userMsgHtml);
+
+            // UPDATED: Loading message with spinning loader icon
+            const loadingMsgHtml = `
+              <div id="ai-response-temp" class="ai-message message-container">
+                  <div class="message-header">
+                      <i data-lucide="loader-2" class="message-header-icon spin-loading"></i>
+                      <span class="message-header-label">Nordlys Fetcher</span>
+                  </div>
+                  <div class="chat-content text-[--color-text-muted]">
+                      Searching through your documents for relevant information...
+                  </div>
+              </div>`;
+
+            const loadingElement = appendMessage(loadingMsgHtml);
+            
+            qInput.value = '';
+            qInput.style.height = 'auto'; 
+            chatSubmitButton.disabled = true;
+            
+            try {
+                const res = await fetch(`/api/chat?client=${client}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ q, doc_filter }) 
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                
+                const j = await res.json();
+                const answer = j.answer || '(No answer received)';
+                const sources = j.sources || [];
+
+                let sourcesHtml = '';
+                if (sources.length > 0) {
+                    sourcesHtml = '<div class="ai-source">';
+                    sources.forEach(src => {
+                        const safeFilename = encodeURIComponent(src.filename);
+                        const pageText = src.is_pdf ? `(Page ${src.page})` : '(Source)';
+                        const clickHandler = src.is_pdf ? `onclick="showPdfViewer('/files/${safeFilename}', ${src.page})"` : 'disabled';
+                        const icon = src.is_pdf ? 'file-text' : 'file-code';
+                        
+                        sourcesHtml += `
+                            <button ${clickHandler} class="ai-source-button" ${!src.is_pdf ? 'title="Source viewing only available for PDFs"' : ''}>
+                                <i data-lucide="${icon}" class="ai-source-button-icon"></i>
+                                <span class="ai-source-button-text">
+                                    ${src.filename} ${pageText}
+                                </span>
+                            </button>`;
+                    });
+                    sourcesHtml += '</div>';
+                }
+
+                if (loadingElement) {
+                    loadingElement.outerHTML = `
+                        <div class="ai-message message-container message-new">
+                            <div class="message-header">
+                                <i data-lucide="file-scan" class="message-header-icon"></i>
+                                <span class="message-header-label">Nordlys Fetcher</span>
+                            </div>
+                            <div class="chat-content">${simpleMarkdown(answer)}</div>
+                            ${sourcesHtml}
+                        </div>`;
+                }
+
+            } catch (err) {
+                if (loadingElement) {
+                    loadingElement.outerHTML = `
+                        <div class="ai-message message-container message-new" style="background-color: #FEE2E2; color: #991B1B;">
+                            <div class="message-header">
+                                <i data-lucide="alert-circle" class="message-header-icon"></i>
+                                <span class="message-header-label">Error</span>
+                            </div>
+                            <div class="chat-content">
+                                Failed to fetch response: ${(err.message || err)}
+                            </div>
+                        </div>`;
+                }
+                showToast(err.message || "Failed to fetch response.", true);
+            } finally {
+                 lucide.createIcons();
+                 chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
+                 
+                 const newAiMsg = messagesContainer.lastElementChild;
+                 if (newAiMsg && newAiMsg.classList.contains('message-new')) {
+                    requestAnimationFrame(() => {
+                        newAiMsg.classList.remove('message-new');
+                    });
+                 }
+            }
+        }
+        
+        qInput.addEventListener('input', () => {
+            chatSubmitButton.disabled = qInput.value.trim().length === 0;
+        });
+        
+        qInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); 
+                if (!chatSubmitButton.disabled) {
+                    ask();
+                }
+            }
+        });
+
+        // --- PDF.js Viewer Logic ---
+        async function renderPage(num) {
+            const pdfCanvas = document.getElementById('pdf-canvas');
+            const pdfPageNum = document.getElementById('pdf-page-num');
+            const pdfRenderArea = document.getElementById('pdf-render-area');
+            const pdfPrev = document.getElementById('pdf-prev');
+            const pdfNext = document.getElementById('pdf-next');
+
+            if (!pdfDoc) return;
+            currentPageNum = num;
+            pdfPageNum.value = currentPageNum;
+            try {
+                const page = await pdfDoc.getPage(num);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvasContext = pdfCanvas.getContext('2d');
+                pdfCanvas.height = viewport.height;
+                pdfCanvas.width = viewport.width;
+                await page.render({ canvasContext, viewport }).promise;
+                pdfPrev.disabled = (currentPageNum <= 1);
+                pdfNext.disabled = (currentPageNum >= pdfDoc.numPages);
+                pdfRenderArea.scrollTop = 0;
+            } catch (err) {
+                 console.error('Error rendering page:', err);
+                 showToast(`Error rendering page ${num}`, true);
+            }
+        }
+
+        async function showPdfViewer(url, pageNum = 1) {
+            const pdfCanvas = document.getElementById('pdf-canvas');
+            const pdfLoader = document.getElementById('pdf-loader');
+            const pdfPageNum = document.getElementById('pdf-page-num');
+
+            pdfViewerModal.classList.add('show');
+            pdfViewerOverlay.classList.add('show');
+            pdfLoader.style.display = 'block';
+            pdfCanvas.style.display = 'none';
+            pdfFilename.textContent = "Loading...";
+            pdfPageCount.textContent = "0";
+            pdfPageNum.value = pageNum;
+
+            try {
+                const loadingTask = pdfjsLib.getDocument(url);
+                pdfDoc = await loadingTask.promise;
+                const docName = decodeURIComponent(url.split('/').pop());
+                pdfFilename.textContent = docName;
+                pdfPageCount.textContent = pdfDoc.numPages;
+                currentPageNum = Math.max(1, Math.min(pageNum, pdfDoc.numPages));
+                pdfLoader.style.display = 'none';
+                pdfCanvas.style.display = 'block';
+                await renderPage(currentPageNum);
+            } catch (err) {
+                console.error('Error loading PDF:', err);
+                pdfFilename.textContent = `Error loading document.`;
+                showToast(err.message || "Error loading PDF", true);
+                pdfLoader.style.display = 'none';
+            }
+        }
+
+        function hidePdfViewer() {
+            pdfViewerModal.classList.remove('show');
+            pdfViewerOverlay.classList.remove('show');
+            if (pdfDoc) {
+                pdfDoc.destroy();
+                pdfDoc = null;
+            }
+            const pdfCanvas = document.getElementById('pdf-canvas');
+            pdfCanvas.getContext('2d').clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+            pdfCanvas.width = 0;
+            pdfCanvas.height = 0;
+        }
+
+        document.getElementById('pdf-prev').addEventListener('click', () => { if (currentPageNum > 1) renderPage(currentPageNum - 1); });
+        document.getElementById('pdf-next').addEventListener('click', () => { if (pdfDoc && currentPageNum < pdfDoc.numPages) renderPage(currentPageNum + 1); });
+        document.getElementById('pdf-page-num').addEventListener('change', () => {
+            const pdfPageNum = document.getElementById('pdf-page-num');
+            if (!pdfDoc) return;
+            const num = parseInt(pdfPageNum.value, 10);
+            if (num > 0 && num <= pdfDoc.numPages) { renderPage(num); } 
+            else { pdfPageNum.value = currentPageNum; }
+        });
+
+        window.onload = () => {
+             showView('chat');
+             checkEmptyFileList(); 
+             updateChatWelcomeVisibility();
+        }
+    </script>
+</body>
+</html>
