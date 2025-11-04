@@ -301,6 +301,220 @@ def rag_answer(question: str, doc_filter: List[str]) -> Dict:
             
     return {"answer": answer, "sources": sources[:5]}
 
+"""
+Time-limited token authentication system.
+Add this to your app.py before the routes section.
+
+Tokens format: base64(token_secret:timestamp:expiry_hours)
+Example: dGVzdDoxNzMwNjQ2MDAwOjI0  (test token, valid for 24h)
+"""
+
+import base64
+import hmac
+import hashlib
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import request, abort, session, render_template, redirect, url_for, flash
+
+# Secret key for signing tokens (MUST be in .env)
+TOKEN_SECRET = os.getenv("TOKEN_SECRET", "change-me-in-production")
+
+# Token validity period in hours (for testing: 30 seconds = 30/3600 hours)
+TOKEN_EXPIRY_HOURS = float(os.getenv("TOKEN_EXPIRY_HOURS", "24"))
+
+
+def generate_token(client_id: str, expiry_hours: float = None) -> str:
+    """
+    Generate a time-limited token for a client.
+    
+    Args:
+        client_id: Unique identifier for the client (e.g., "client1")
+        expiry_hours: Hours until token expires (default: TOKEN_EXPIRY_HOURS)
+    
+    Returns:
+        Base64-encoded token string
+    """
+    if expiry_hours is None:
+        expiry_hours = TOKEN_EXPIRY_HOURS
+    
+    # Current timestamp
+    issued_at = int(time.time())
+    
+    # Create token payload: client_id:timestamp:expiry_hours
+    payload = f"{client_id}:{issued_at}:{expiry_hours}"
+    
+    # Sign the payload with HMAC
+    signature = hmac.new(
+        TOKEN_SECRET.encode(),
+        payload.encode(),
+        hashlib.sha256
+    ).hexdigest()[:16]  # Use first 16 chars of signature
+    
+    # Combine payload and signature
+    token_data = f"{payload}:{signature}"
+    
+    # Encode to base64
+    token = base64.urlsafe_b64encode(token_data.encode()).decode()
+    
+    return token
+
+
+def verify_token(token: str) -> dict:
+    """
+    Verify and decode a time-limited token.
+    
+    Returns:
+        dict with 'valid', 'client_id', 'issued_at', 'expires_at', 'remaining_seconds'
+        or dict with 'valid': False and 'error' message
+    """
+    try:
+        # Decode from base64
+        token_data = base64.urlsafe_b64decode(token.encode()).decode()
+        
+        # Split into parts
+        parts = token_data.split(':')
+        if len(parts) != 4:
+            return {"valid": False, "error": "Invalid token format"}
+        
+        client_id, issued_at_str, expiry_hours_str, signature = parts
+        
+        # Reconstruct payload
+        payload = f"{client_id}:{issued_at_str}:{expiry_hours_str}"
+        
+        # Verify signature
+        expected_signature = hmac.new(
+            TOKEN_SECRET.encode(),
+            payload.encode(),
+            hashlib.sha256
+        ).hexdigest()[:16]
+        
+        if not hmac.compare_digest(signature, expected_signature):
+            return {"valid": False, "error": "Invalid token signature"}
+        
+        # Parse timestamp and expiry
+        issued_at = int(issued_at_str)
+        expiry_hours = float(expiry_hours_str)
+        
+        # Calculate expiration
+        issued_dt = datetime.fromtimestamp(issued_at)
+        expires_at = issued_dt + timedelta(hours=expiry_hours)
+        now = datetime.now()
+        
+        # Check if expired
+        if now > expires_at:
+            return {
+                "valid": False,
+                "error": "Token expired",
+                "expired_at": expires_at.isoformat()
+            }
+        
+        # Calculate remaining time
+        remaining = (expires_at - now).total_seconds()
+        
+        return {
+            "valid": True,
+            "client_id": client_id,
+            "issued_at": issued_dt.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "remaining_seconds": int(remaining),
+            "remaining_human": format_time_remaining(remaining)
+        }
+    
+    except Exception as e:
+        return {"valid": False, "error": f"Token verification failed: {str(e)}"}
+
+
+def format_time_remaining(seconds: float) -> str:
+    """Format remaining seconds into human-readable string."""
+    if seconds < 60:
+        return f"{int(seconds)} seconds"
+    elif seconds < 3600:
+        minutes = int(seconds / 60)
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    else:
+        hours = int(seconds / 3600)
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+
+
+# Session timeout (for auto-logout)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=TOKEN_EXPIRY_HOURS)
+
+
+@app.before_request
+def check_token_auth():
+    """Check authentication before every request."""
+    
+    # Public endpoints that don't require auth
+    public_endpoints = ['static', 'login_token', 'logout']
+    
+    if request.endpoint in public_endpoints:
+        return None
+    
+    # Check if already authenticated in session
+    if session.get('authenticated'):
+        # Verify session hasn't expired
+        token_info = session.get('token_info')
+        if token_info:
+            expires_at = datetime.fromisoformat(token_info['expires_at'])
+            if datetime.now() > expires_at:
+                session.clear()
+                flash('Your session has expired. Please log in again.', 'error')
+                return redirect(url_for('login_token'))
+        return None
+    
+    # Check for token in query params or header
+    token = request.args.get('token') or request.headers.get('X-Access-Token')
+    
+    if token:
+        # Verify token
+        result = verify_token(token)
+        
+        if result['valid']:
+            # Store in session
+            session['authenticated'] = True
+            session['token_info'] = result
+            session.permanent = True
+            
+            tprint(f"✅ Client authenticated: {result['client_id']}, "
+                   f"expires in {result['remaining_human']}")
+            
+            return None
+        else:
+            # Invalid or expired token
+            tprint(f"❌ Authentication failed: {result.get('error')}")
+            flash(f"Authentication failed: {result.get('error')}", 'error')
+    
+    # No valid authentication - redirect to login
+    if request.endpoint == 'index' and request.method == 'GET':
+        return render_template('login_token.html')
+    
+    abort(401)
+
+
+@app.route('/login')
+def login_token():
+    """Login page for token entry."""
+    return render_template('login_token.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout and clear session."""
+    client_id = session.get('token_info', {}).get('client_id', 'Unknown')
+    session.clear()
+    tprint(f"🚪 Client logged out: {client_id}")
+    flash('Logged out successfully', 'ok')
+    return redirect(url_for('login_token'))
+
+
+@app.route('/api/token/info')
+def token_info():
+    """Get current token information (for debugging)."""
+    if not session.get('authenticated'):
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    info = session.get('token_info', {})
+    return jsonify(info)
 
 # =========================
 # Routes
