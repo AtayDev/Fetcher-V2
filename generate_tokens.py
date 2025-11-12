@@ -5,7 +5,7 @@ Run this script to generate time-limited access tokens for your clients.
 
 Usage:
     python generate_tokens.py                    # Interactive mode
-    python generate_tokens.py client1 24         # Generate token for client1, valid 24h
+    python generate_tokens.py client1 72         # Generate token for client1, valid 72h
     python generate_tokens.py test 0.00833       # Generate test token (30 seconds)
 """
 
@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN_SECRET = os.getenv("TOKEN_SECRET", "change-me-in-production")
-DEFAULT_EXPIRY_HOURS = float(os.getenv("TOKEN_EXPIRY_HOURS", "24"))
+DEFAULT_EXPIRY_HOURS = float(os.getenv("TOKEN_EXPIRY_HOURS", str(72)))
 
 
 def generate_token(client_id: str, expiry_hours: float) -> str:
@@ -103,7 +103,7 @@ def interactive_mode():
     
     while True:
         print("\n📋 OPTIONS:")
-        print("  1. Generate token (24 hours)")
+        print(f"  1. Generate token ({DEFAULT_EXPIRY_HOURS:g} hours)")
         print("  2. Generate token (custom expiry)")
         print("  3. Generate TEST token (30 seconds)")
         print("  4. Verify existing token")
@@ -255,7 +255,7 @@ def cli_mode(client_id: str, expiry_hours: float):
 
 if __name__ == "__main__":
     if len(sys.argv) == 3:
-        # CLI mode: python generate_tokens.py client1 24
+        # CLI mode: python generate_tokens.py client1 72
         try:
             client_id = sys.argv[1]
             expiry = float(sys.argv[2])

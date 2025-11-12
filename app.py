@@ -320,7 +320,7 @@ from flask import request, abort, session, render_template, redirect, url_for, f
 TOKEN_SECRET = os.getenv("TOKEN_SECRET", "change-me-in-production")
 
 # Token validity period in hours (for testing: 30 seconds = 30/3600 hours)
-TOKEN_EXPIRY_HOURS = float(os.getenv("TOKEN_EXPIRY_HOURS", "24"))
+TOKEN_EXPIRY_HOURS = float(os.getenv("TOKEN_EXPIRY_HOURS", str(72)))
 
 
 def generate_token(client_id: str, expiry_hours: float = None) -> str:
@@ -487,7 +487,10 @@ def check_token_auth():
     # No valid authentication - redirect to login
     if request.endpoint == 'index' and request.method == 'GET':
         return render_template('login_token.html')
-    
+
+    if request.accept_mimetypes.accept_html:
+        return redirect(url_for('login_token'))
+
     abort(401)
 
 
