@@ -33,8 +33,9 @@ def tprint(*args, **kwargs):
 # =========================
 load_dotenv()
 
-CHROMA_DIR = os.getenv("CHROMA_DIR", "./storage/chroma")
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./storage/uploads")
+CHROMA_DIR = Path(os.environ.get("CHROMA_DIR", "/app/storage/chroma"))
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/storage/uploads"))
+
 FLASK_SECRET = os.getenv("FLASK_SECRET", "dev-secret")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "global_knowledge")
 
