@@ -653,9 +653,10 @@ def api_delete():
 
         # 2. Delete vectors from ChromaDB
         vs = vectorstore()
-        vs.delete(where={"filename": sec_filename})
+        metadata_filter = {"filename": {"$eq": filename}}
+        deleted = vs.delete(where=metadata_filter)
         vs.persist()
-        tprint(f"Deleted vectors from Chroma for: {sec_filename}")
+        tprint(f"Deleted vectors from Chroma for: {filename} (results={deleted})")
 
         return jsonify({"success": True, "filename": sec_filename})
 
